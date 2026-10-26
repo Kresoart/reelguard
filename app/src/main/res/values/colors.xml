@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#5B3FD6</color>
+    <!-- AMOLED black + electric blue -->
+    <color name="bg">#000000</color>
+    <color name="surface">#0E1117</color>
+    <color name="surface2">#161B26</color>
+    <color name="stroke">#1F2633</color>
+    <color name="accent">#2F7BFF</color>
+    <color name="accent_pressed">#1F63DB</color>
+    <color name="accent_dim">#1A3A7A</color>
+    <color name="text">#FFFFFF</color>
+    <color name="text_muted">#8A93A6</color>
+    <color name="danger">#FF4D5E</color>
+
+    <color name="ic_launcher_background">#000000</color>
 </resources>

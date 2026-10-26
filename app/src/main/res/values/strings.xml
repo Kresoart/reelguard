@@ -2,5 +2,5 @@
 <resources>
     <string name="app_name">ReelGuard</string>
     <string name="service_label">ReelGuard – Reels blocker</string>
-    <string name="service_description">Watches only the Instagram app. Blocks the Reels tab and endless scrolling, but lets you watch a reel someone sent you in a DM. Nothing is stored or sent anywhere.</string>
+    <string name="service_description">Only reads the Instagram screen. For other apps it just notices which app is open, so it knows when you open a reel from a link. Blocks the Reels tab and endless scrolling, but lets you watch a reel someone sent you. ReelGuard has no internet access – nothing leaves your phone.</string>
 </resources>

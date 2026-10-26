@@ -1,35 +1,48 @@
 package com.reelguard.app
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 import java.text.DateFormat
 import java.util.Date
 
 /**
- * The blocker. Android only sends it events from Instagram (see res/xml/reel_guard_service.xml).
+ * The blocker.
  *
  * Rules:
- *  - Reels player opened from the Reels tab / feed / explore  → press Back.
- *  - Reels player opened from a DM (or a link from another app) → allowed,
- *    but as soon as you swipe to the next reel → press Back.
+ *  - Reels player opened from the Reels tab / feed / Explore  → press Back.
+ *  - Reels player opened from a DM, or straight from another app (a link in WhatsApp etc.)
+ *    → allowed, but as soon as you swipe to the next reel → press Back.
+ *
+ * Battery: outside Instagram the service only listens for "an app/screen came to the front"
+ * events (a handful per minute). The detailed Instagram events are switched on only while
+ * Instagram is the app in front, and switched off again as soon as you leave it.
  */
 class ReelGuardService : AccessibilityService() {
 
     private lateinit var prefs: Prefs
     private lateinit var overlay: Overlay
 
-    // ---- state ----
+    // ---- which app is in front ----
+    private var instagramInFront = false
+    private var lastOtherApp: String? = null   // the last real app that was in front before Instagram
+    private var instagramEnteredAt = 0L
+    private var launcherPackages: Set<String> = emptySet()
+    private var keyboardPackages: Set<String> = emptySet()
+
+    // ---- Reels state ----
     private var inViewer = false            // Reels player currently on screen
-    private var allowedSession = false      // this player session was opened from a DM
-    private var cameFromDm = false          // last real screen before the player was a DM chat
-    private var freshFromOutside = true     // Instagram just came to the front, no taps yet
+    private var allowedSession = false      // this player session was opened from a DM / link
+    private var cameFromDm = false          // last real Instagram screen before the player was a DM chat
+    private var freshFromOutside = false    // Instagram was opened from another app and you haven't moved yet
     private var viewerEnteredAt = 0L
     private var startIndex = -1             // which item the pager was on when you arrived
 
     // ---- timing ----
-    private var lastEventAt = 0L
     private var lastCheckAt = 0L
     private var lastBackAt = 0L
     private var backStreak = 0
@@ -38,35 +51,42 @@ class ReelGuardService : AccessibilityService() {
         super.onServiceConnected()
         prefs = Prefs(this)
         overlay = Overlay(this)
-        resetState()
+        launcherPackages = findLaunchers()
+        keyboardPackages = findKeyboards()
+        resetReelsState()
+        freshFromOutside = false
+
+        val inFrontNow = rootInActiveWindow?.packageName?.toString()
+        if (inFrontNow == Rules.INSTAGRAM) enterInstagram(fromOtherApp = false) else watchInstagramClosely(false)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || !::prefs.isInitialized) return
-        if (event.packageName?.toString() != Rules.INSTAGRAM) return
-        if (!prefs.enabled) {
-            if (inViewer) resetState()
+        val pkg = event.packageName?.toString() ?: return
+
+        if (pkg != Rules.INSTAGRAM) {
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && isRealApp(pkg)) {
+                // Another app came to the front.
+                lastOtherApp = pkg
+                if (instagramInFront) leaveInstagram()
+            }
             return
         }
 
         val now = SystemClock.uptimeMillis()
-        if (now - lastEventAt > FOREGROUND_GAP_MS) {
-            // No Instagram events for a while → it was in the background and just came back
-            // (e.g. you tapped a reel link in WhatsApp). Until you tap something, that counts as "outside".
-            freshFromOutside = true
+        if (!instagramInFront) {
+            val from = lastOtherApp
+            enterInstagram(fromOtherApp = from != null && from !in launcherPackages && from != packageName)
         }
-        lastEventAt = now
+
+        if (!prefs.enabled) {
+            if (inViewer) resetReelsState()
+            return
+        }
 
         when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                freshFromOutside = false
-            }
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                handleScroll(event, now)
-            }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                checkScreen(now)
-            }
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> handleScroll(event, now)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> checkScreen(now)
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 // These fire constantly while video plays, so only look a few times a second.
                 if (now - lastCheckAt >= CONTENT_THROTTLE_MS) checkScreen(now)
@@ -81,11 +101,57 @@ class ReelGuardService : AccessibilityService() {
         super.onDestroy()
     }
 
-    // ---------------------------------------------------------------------------------------------
+    // ---- foreground tracking --------------------------------------------------------------------
+
+    private fun enterInstagram(fromOtherApp: Boolean) {
+        instagramInFront = true
+        instagramEnteredAt = SystemClock.uptimeMillis()
+        freshFromOutside = fromOtherApp
+        resetReelsState()
+        watchInstagramClosely(true)
+    }
+
+    private fun leaveInstagram() {
+        instagramInFront = false
+        freshFromOutside = false
+        resetReelsState()
+        watchInstagramClosely(false)
+    }
+
+    /** Switches between "everything from Instagram" and "only app switches" to save battery. */
+    private fun watchInstagramClosely(on: Boolean) {
+        val info = serviceInfo ?: return
+        val wanted = if (on) EVENTS_IN_INSTAGRAM else EVENTS_OUTSIDE
+        if (info.eventTypes != wanted) {
+            info.eventTypes = wanted
+            serviceInfo = info
+        }
+    }
+
+    /** Pop-ups that sit on top of an app don't count as "switching apps". */
+    private fun isRealApp(pkg: String): Boolean =
+        pkg != "com.android.systemui" &&   // notification shade, volume panel
+            pkg != "android" &&            // system dialogs and share sheets
+            pkg !in keyboardPackages
+
+    private fun findLaunchers(): Set<String> {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        return packageManager.queryIntentActivities(home, PackageManager.MATCH_DEFAULT_ONLY)
+            .mapNotNull { it.activityInfo?.packageName }
+            .toSet()
+    }
+
+    private fun findKeyboards(): Set<String> {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return emptySet()
+        return imm.inputMethodList.map { it.packageName }.toSet()
+    }
+
+    // ---- screen checks --------------------------------------------------------------------------
 
     private fun checkScreen(now: Long) {
         lastCheckAt = now
         val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != Rules.INSTAGRAM) return
         val capture = prefs.captureRequested
         val screen = scan(root, capture)
 
@@ -99,7 +165,7 @@ class ReelGuardService : AccessibilityService() {
                     screen.ids.forEach { append(it).append('\n') }
                 }
             }
-            resetState()
+            resetReelsState()
             return
         }
 
@@ -115,7 +181,7 @@ class ReelGuardService : AccessibilityService() {
                     prefs.incAllowed()
                     prefs.lastEvent = stamp(if (cameFromDm) "Allowed a reel from a DM" else "Allowed a reel from a link")
                 } else {
-                    block(now, "Reels are off", "Blocked the Reels tab / feed")
+                    block(now, "Reels are off", "Blocked Reels")
                 }
             } else if (allowedSession && screen.reelsTabSelected) {
                 // Jumped from a DM reel into the Reels tab.
@@ -123,20 +189,18 @@ class ReelGuardService : AccessibilityService() {
                 block(now, "Reels are off", "Blocked the Reels tab")
             } else if (!allowedSession && now - lastBackAt > RETRY_BACK_MS) {
                 // Still in the player after we pressed Back (maybe Back only closed a sheet). Try again.
-                block(now, "Reels are off", "Blocked the Reels tab / feed")
+                block(now, "Reels are off", "Blocked Reels")
             }
         } else {
             inViewer = false
             allowedSession = false
             backStreak = 0
-            // Remember where you are so we know where the next reel came from.
-            if (screen.inDm) {
-                cameFromDm = true
-            } else if (screen.tabBarVisible) {
-                cameFromDm = false
-            }
-            // A normal Instagram screen means you're navigating inside the app now.
-            freshFromOutside = false
+            // Remember whether this screen is a DM chat, so we know where the next reel came from.
+            cameFromDm = screen.inDm
+            // Once you're looking at a normal Instagram screen, you're browsing Instagram itself –
+            // a reel you open next is NOT "from another app". (Short grace period for cold starts,
+            // where Instagram flashes its home screen before jumping to the linked reel.)
+            if (now - instagramEnteredAt > LINK_GRACE_MS) freshFromOutside = false
         }
     }
 
@@ -165,7 +229,8 @@ class ReelGuardService : AccessibilityService() {
 
         if (movedToAnotherReel) {
             allowedSession = false
-            block(now, "That's the one you were sent 👋", "Stopped a scroll after a DM reel")
+            freshFromOutside = false
+            block(now, "That's the one you were sent 👋", "Stopped a scroll after a shared reel")
         }
     }
 
@@ -174,7 +239,7 @@ class ReelGuardService : AccessibilityService() {
         if (backStreak >= MAX_BACK_STREAK) {
             // Something isn't being detected right – don't keep hammering Back.
             if (backStreak == MAX_BACK_STREAK) {
-                overlay.show("ReelGuard couldn't leave Reels – open the app → Capture IDs", 3500L)
+                overlay.show("Couldn't leave Reels – open ReelGuard → Fix detection", 3500L)
                 prefs.lastEvent = stamp("Gave up after $MAX_BACK_STREAK tries – detection may need updating")
                 backStreak++
             }
@@ -188,11 +253,10 @@ class ReelGuardService : AccessibilityService() {
         prefs.lastEvent = stamp(log)
     }
 
-    private fun resetState() {
+    private fun resetReelsState() {
         inViewer = false
         allowedSession = false
         cameFromDm = false
-        freshFromOutside = true
         startIndex = -1
         backStreak = 0
     }
@@ -260,8 +324,13 @@ class ReelGuardService : AccessibilityService() {
     }
 
     companion object {
+        private const val EVENTS_OUTSIDE = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        private const val EVENTS_IN_INSTAGRAM = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+            AccessibilityEvent.TYPE_VIEW_SCROLLED
+
         private const val CONTENT_THROTTLE_MS = 350L
-        private const val FOREGROUND_GAP_MS = 2500L
+        private const val LINK_GRACE_MS = 2500L
         private const val OPENING_GRACE_MS = 1200L
         private const val MIN_BACK_INTERVAL_MS = 700L
         private const val RETRY_BACK_MS = 1000L

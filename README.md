@@ -6,7 +6,7 @@ Blocks Instagram Reels scrolling on Android, but still lets you watch a reel som
 - Open a reel from a **DM** (or a reel link from WhatsApp etc.) → it plays normally.
 - **Swipe** to the next reel → ReelGuard presses Back: *"That's the one you were sent"*.
 
-It only listens to Instagram, does a quick check a few times a second while Instagram is open, and does nothing otherwise. No internet permission, no account, nothing leaves the phone.
+It only reads Instagram's screen, does a quick check a few times a second while Instagram is open, and otherwise only notices which app is open. No internet permission, no account, nothing leaves the phone.
 
 ## Build it (pick one)
 
@@ -39,12 +39,16 @@ All of Instagram's screen IDs are in `app/src/main/java/com/reelguard/app/Rules.
 | Situation | What happens |
 |---|---|
 | Reels tab selected in the bottom bar | Blocked |
-| Reels player opened while the last screen was Home/Search/Profile (bottom bar visible) | Blocked |
-| Reels player opened while the last screen was a DM chat | Allowed (one reel) |
-| Instagram opened straight into a reel from another app, no taps yet | Allowed (one reel) |
+| Reels player opened from Home, Search/Explore or Profile | Blocked |
+| Reels player opened while you were in a DM chat | Allowed (one reel) |
+| Reel link opened from another app (WhatsApp, Messages…) | Allowed (one reel) |
 | Swipe in an allowed reel moves to a different item | Back + "That's the one you were sent" |
 | Scrolling comments under an allowed reel | Fine |
-| Back didn't leave Reels after 3 tries | Stops trying, tells you to capture IDs |
+| Back didn't leave Reels after 3 tries | Stops trying, tells you to use Fix detection |
+
+ReelGuard knows you came "from another app" because Android tells it which app is in front.
+Outside Instagram it only listens for app switches (a handful of events a minute); the detailed
+Instagram events are switched on only while Instagram is open.
 
 ## Project layout
 ```

@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Battery-friendly setup:
-  - packageNames: Android only wakes the service for Instagram, never for other apps.
-  - only four event types, and notificationTimeout batches bursts of events.
+  - At start the service only hears "an app came to the front" (typeWindowStateChanged),
+    a handful of events per minute, so it knows when Instagram opens and where you came from.
+  - While Instagram is in front, ReelGuardService switches on content + scroll events,
+    and switches them off again when you leave Instagram.
+  - notificationTimeout batches bursts of events.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled|typeViewClicked"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:description="@string/service_description"
     android:notificationTimeout="100"
-    android:packageNames="com.instagram.android"
     android:settingsActivity="com.reelguard.app.MainActivity" />

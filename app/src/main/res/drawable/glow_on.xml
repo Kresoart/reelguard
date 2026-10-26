@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft blue light behind the shield when blocking is on. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <gradient
+        android:centerColor="#332F7BFF"
+        android:endColor="#002F7BFF"
+        android:gradientRadius="90dp"
+        android:startColor="#802F7BFF"
+        android:type="radial" />
+</shape>

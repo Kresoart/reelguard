@@ -2,6 +2,9 @@ package com.reelguard.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Small on-device settings store. Nothing here ever leaves the phone. */
 class Prefs(context: Context) {
@@ -13,24 +16,41 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_ENABLED, true)
         set(value) = sp.edit().putBoolean(KEY_ENABLED, value).apply()
 
+    /** All-time scrolls stopped. */
     val blockedCount: Int
         get() = sp.getInt(KEY_BLOCKED, 0)
+
+    /** Scrolls stopped today (resets at midnight). */
+    val todayBlocked: Int
+        get() = if (sp.getString(KEY_TODAY_DATE, null) == today()) sp.getInt(KEY_TODAY_BLOCKED, 0) else 0
 
     val allowedCount: Int
         get() = sp.getInt(KEY_ALLOWED, 0)
 
-    fun incBlocked() = sp.edit().putInt(KEY_BLOCKED, blockedCount + 1).apply()
+    fun incBlocked() {
+        val date = today()
+        val todaySoFar = if (sp.getString(KEY_TODAY_DATE, null) == date) sp.getInt(KEY_TODAY_BLOCKED, 0) else 0
+        sp.edit()
+            .putInt(KEY_BLOCKED, blockedCount + 1)
+            .putString(KEY_TODAY_DATE, date)
+            .putInt(KEY_TODAY_BLOCKED, todaySoFar + 1)
+            .apply()
+    }
 
     fun incAllowed() = sp.edit().putInt(KEY_ALLOWED, allowedCount + 1).apply()
 
-    fun resetCounters() = sp.edit().putInt(KEY_BLOCKED, 0).putInt(KEY_ALLOWED, 0).apply()
+    fun resetCounters() = sp.edit()
+        .putInt(KEY_BLOCKED, 0)
+        .putInt(KEY_ALLOWED, 0)
+        .putInt(KEY_TODAY_BLOCKED, 0)
+        .apply()
 
     /** Human-readable description of the last decision the service made. */
     var lastEvent: String
         get() = sp.getString(KEY_LAST_EVENT, "") ?: ""
         set(value) = sp.edit().putString(KEY_LAST_EVENT, value).apply()
 
-    /** When true, the service saves the view IDs of the next Instagram screen it sees. */
+    /** When true, the service saves the view IDs of the Instagram screen it sees (blocking paused). */
     var captureRequested: Boolean
         get() = sp.getBoolean(KEY_CAPTURE_REQ, false)
         set(value) = sp.edit().putBoolean(KEY_CAPTURE_REQ, value).apply()
@@ -45,9 +65,13 @@ class Prefs(context: Context) {
     fun unregisterListener(l: SharedPreferences.OnSharedPreferenceChangeListener) =
         sp.unregisterOnSharedPreferenceChangeListener(l)
 
+    private fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
     companion object {
         const val KEY_ENABLED = "enabled"
         const val KEY_BLOCKED = "blocked_count"
+        const val KEY_TODAY_BLOCKED = "today_blocked"
+        const val KEY_TODAY_DATE = "today_date"
         const val KEY_ALLOWED = "allowed_count"
         const val KEY_LAST_EVENT = "last_event"
         const val KEY_CAPTURE_REQ = "capture_requested"

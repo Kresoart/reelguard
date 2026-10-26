@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 32dp box with a 24dp white knob in the middle (the transparent ring is the padding). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFFFF" />
+            <stroke android:width="4dp" android:color="@android:color/transparent" />
+            <size android:width="32dp" android:height="32dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/text_muted" />
+            <stroke android:width="4dp" android:color="@android:color/transparent" />
+            <size android:width="32dp" android:height="32dp" />
+        </shape>
+    </item>
+</selector>

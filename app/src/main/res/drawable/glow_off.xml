@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Faint grey light behind the shield when paused / not active. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <gradient
+        android:centerColor="#108A93A6"
+        android:endColor="#008A93A6"
+        android:gradientRadius="90dp"
+        android:startColor="#288A93A6"
+        android:type="radial" />
+</shape>

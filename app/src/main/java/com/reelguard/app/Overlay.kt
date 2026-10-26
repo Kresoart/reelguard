@@ -2,6 +2,7 @@ package com.reelguard.app
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -11,7 +12,8 @@ import android.view.WindowManager
 import android.widget.TextView
 
 /**
- * A short message pill shown over Instagram ("Reels are off").
+ * The little message pill shown over Instagram ("Reels are off").
+ * Black with a blue edge and a shield icon; fades in and out.
  * Uses the accessibility overlay window type, so no "draw over other apps" permission is needed.
  */
 class Overlay(private val context: Context) {
@@ -21,11 +23,21 @@ class Overlay(private val context: Context) {
     private var view: TextView? = null
     private val hideRunnable = Runnable { hide() }
 
+    private val typeface: Typeface? by lazy {
+        try {
+            context.resources.getFont(R.font.inter_semibold)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun show(message: String, durationMs: Long = 1800L) {
         handler.post {
             val existing = view
             if (existing != null) {
                 existing.text = message
+                existing.animate().cancel()
+                existing.alpha = 1f
             } else {
                 val tv = buildView(message)
                 try {
@@ -35,6 +47,9 @@ class Overlay(private val context: Context) {
                     // Window couldn't be added (e.g. service is being shut down). Ignore.
                     return@post
                 }
+                tv.alpha = 0f
+                tv.translationY = -dp(8f)
+                tv.animate().alpha(1f).translationY(0f).setDuration(FADE_MS).start()
             }
             handler.removeCallbacks(hideRunnable)
             handler.postDelayed(hideRunnable, durationMs)
@@ -45,24 +60,40 @@ class Overlay(private val context: Context) {
         handler.removeCallbacks(hideRunnable)
         val v = view ?: return
         view = null
-        try {
-            wm.removeView(v)
-        } catch (_: Exception) {
-        }
+        v.animate().alpha(0f).setDuration(FADE_MS).withEndAction {
+            try {
+                wm.removeView(v)
+            } catch (_: Exception) {
+            }
+        }.start()
     }
 
     private fun buildView(message: String): TextView {
-        val pad = dp(14f).toInt()
+        val padV = dp(12f).toInt()
+        val padH = dp(18f).toInt()
+        val accent = context.getColor(R.color.accent)
         return TextView(context).apply {
             text = message
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(context.getColor(R.color.text))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setPadding(pad + pad / 2, pad, pad + pad / 2, pad)
+            typeface?.let { setTypeface(it) }
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(padH, padV, padH + dp(2f).toInt(), padV)
+
+            context.getDrawable(R.drawable.ic_shield)?.mutate()?.let { icon ->
+                icon.setTint(accent)
+                val size = dp(18f).toInt()
+                icon.setBounds(0, 0, size, size)
+                setCompoundDrawablesRelative(icon, null, null, null)
+                compoundDrawablePadding = dp(10f).toInt()
+            }
+
             background = GradientDrawable().apply {
                 cornerRadius = dp(24f)
-                setColor(0xEE1C1633.toInt())
+                setColor(0xF20E1117.toInt())
+                setStroke(dp(1f).toInt().coerceAtLeast(1), accent)
             }
-            elevation = dp(6f)
+            elevation = dp(8f)
         }
     }
 
@@ -81,4 +112,8 @@ class Overlay(private val context: Context) {
 
     private fun dp(v: Float): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, context.resources.displayMetrics)
+
+    companion object {
+        private const val FADE_MS = 150L
+    }
 }
