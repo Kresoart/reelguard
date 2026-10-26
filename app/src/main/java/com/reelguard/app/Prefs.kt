@@ -46,9 +46,22 @@ class Prefs(context: Context) {
         .apply()
 
     /** Human-readable description of the last decision the service made. */
-    var lastEvent: String
+    val lastEvent: String
         get() = sp.getString(KEY_LAST_EVENT, "") ?: ""
-        set(value) = sp.edit().putString(KEY_LAST_EVENT, value).apply()
+
+    /** The last [HISTORY_SIZE] decisions, newest first – shown under Fix detection. */
+    val history: String
+        get() = sp.getString(KEY_HISTORY, "") ?: ""
+
+    /** Records a decision (with the time) as the "last" event and at the top of the history. */
+    fun log(text: String) {
+        val line = "${timeNow()} · $text"
+        val lines = listOf(line) + history.lines().filter { it.isNotBlank() }.take(HISTORY_SIZE - 1)
+        sp.edit()
+            .putString(KEY_LAST_EVENT, line)
+            .putString(KEY_HISTORY, lines.joinToString("\n"))
+            .apply()
+    }
 
     /** When true, the service saves the view IDs of the Instagram screen it sees (blocking paused). */
     var captureRequested: Boolean
@@ -68,6 +81,11 @@ class Prefs(context: Context) {
     private fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
     companion object {
+        private const val HISTORY_SIZE = 20
+
+        fun timeNow(): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+
+        const val KEY_HISTORY = "history"
         const val KEY_ENABLED = "enabled"
         const val KEY_BLOCKED = "blocked_count"
         const val KEY_TODAY_BLOCKED = "today_blocked"

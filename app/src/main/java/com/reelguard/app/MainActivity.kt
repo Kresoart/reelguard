@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var allowedStat: TextView
     private lateinit var capture: Button
     private lateinit var capturedIds: TextView
+    private lateinit var historyView: TextView
 
     private var shownState: State? = null
 
@@ -64,6 +65,7 @@ class MainActivity : Activity() {
         allowedStat = findViewById(R.id.allowedStat)
         capture = findViewById(R.id.capture)
         capturedIds = findViewById(R.id.capturedIds)
+        historyView = findViewById(R.id.history)
 
         val openA11y = View.OnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -154,6 +156,9 @@ class MainActivity : Activity() {
         lastDot.alpha = if (last.isEmpty()) 0.3f else 1f
 
         capture.text = if (prefs.captureRequested) "Waiting for Instagram… (tap to cancel)" else "Capture Instagram screen IDs"
+        val history = prefs.history
+        historyView.text = if (history.isEmpty()) "Nothing yet" else history
+
         val ids = prefs.capturedIds
         capturedIds.text = ids
         capturedIds.visibility = if (ids.isEmpty()) View.GONE else View.VISIBLE

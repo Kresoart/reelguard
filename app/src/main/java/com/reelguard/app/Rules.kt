@@ -44,9 +44,15 @@ object Rules {
         "message_list",
     )
 
-    /** Instagram's bottom navigation bar. It is hidden inside DMs and shown on Home, Search, Profile… */
+    /**
+     * Instagram's bottom navigation bar (or its buttons). It is hidden inside DMs and shown on
+     * Home, Search/Explore, Profile… Seeing it means "you're browsing Instagram, not a chat".
+     */
     val TAB_BAR = listOf(
         "tab_bar",
+        "feed_tab",
+        "search_tab",
+        "profile_tab",
     )
 
     fun matches(id: String, patterns: List<String>): Boolean =
