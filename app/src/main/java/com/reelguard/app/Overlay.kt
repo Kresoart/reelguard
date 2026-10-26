@@ -13,7 +13,7 @@ import android.widget.TextView
 
 /**
  * The little message pill shown over Instagram ("Reels are off").
- * Black with a blue edge and a shield icon; fades in and out.
+ * Black with a blue shield icon; fades in and out.
  * Uses the accessibility overlay window type, so no "draw over other apps" permission is needed.
  */
 class Overlay(private val context: Context) {
@@ -91,7 +91,6 @@ class Overlay(private val context: Context) {
             background = GradientDrawable().apply {
                 cornerRadius = dp(24f)
                 setColor(0xF20E1117.toInt())
-                setStroke(dp(1f).toInt().coerceAtLeast(1), accent)
             }
             elevation = dp(8f)
         }
