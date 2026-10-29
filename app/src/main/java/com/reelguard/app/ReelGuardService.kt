@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -49,6 +51,14 @@ class ReelGuardService : AccessibilityService() {
     private var baselineIndex = -1          // which reel you were on when the session started
     private var scrolledPx = 0              // fallback when Instagram doesn't report reel numbers
 
+    // ---- Search page ----
+    private var onSearchPage = false        // last check showed the Search page with its search box
+    private var searchTabSelected = false   // Search tab selected (incl. profiles opened from it) → faster checks
+    private var keepCoverUntil = 0L         // just tapped Search: don't drop the instant cover yet
+    private var wasUnlocked = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val relockCheck = Runnable { if (instagramInFront) checkScreen(SystemClock.uptimeMillis()) }
+
     // ---- timing ----
     private var lastCheckAt = 0L
     private var lastBackAt = 0L
@@ -58,7 +68,7 @@ class ReelGuardService : AccessibilityService() {
         super.onServiceConnected()
         prefs = Prefs(this)
         overlay = Overlay(this)
-        exploreCover = ExploreCover(this)
+        exploreCover = ExploreCover(this) { unlockExplore() }
         launcherPackages = findLaunchers()
         keyboardPackages = findKeyboards()
 
@@ -95,10 +105,13 @@ class ReelGuardService : AccessibilityService() {
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> handleScroll(event, now)
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClick(event, now)
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> checkScreen(now)
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                // These fire constantly while video plays, so only look a few times a second.
-                if (now - lastCheckAt >= CONTENT_THROTTLE_MS) checkScreen(now)
+                // These fire constantly while video plays, so only look a few times a second –
+                // a bit more often on the Search page, so the cover keeps up with what's on screen.
+                val throttle = if (searchTabSelected) SEARCH_THROTTLE_MS else CONTENT_THROTTLE_MS
+                if (now - lastCheckAt >= throttle) checkScreen(now)
             }
         }
     }
@@ -106,6 +119,7 @@ class ReelGuardService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
         if (::overlay.isInitialized) overlay.destroy()
         if (::exploreCover.isInitialized) exploreCover.destroy()
         super.onDestroy()
@@ -125,6 +139,9 @@ class ReelGuardService : AccessibilityService() {
 
     private fun leaveInstagram() {
         instagramInFront = false
+        onSearchPage = false
+        searchTabSelected = false
+        keepCoverUntil = 0L
         exploreCover.hide()
         freshFromOutside = false
         cameFromDm = false
@@ -189,6 +206,8 @@ class ReelGuardService : AccessibilityService() {
         }
 
         if (screen.inViewer) {
+            onSearchPage = false
+            keepCoverUntil = 0L
             exploreCover.hide()
             if (!inViewer) {
                 startViewerSession(now, screen)
@@ -218,27 +237,91 @@ class ReelGuardService : AccessibilityService() {
             // flashes its home screen before jumping to the linked reel.)
             if (screen.tabBarVisible && now - instagramEnteredAt > LINK_GRACE_MS) freshFromOutside = false
 
-            updateExploreCover(screen)
+            updateExploreCover(screen, now)
         }
     }
 
     /**
      * On the Search page, while the search box is idle, cover the Explore grid between the search
-     * box and the bottom bar. As soon as you tap the search box (or there's text in it), the cover
-     * goes away so you can see your search results.
+     * box and the bottom bar, plus the buttons to the right of the search box (the ⋯ menu).
+     * As soon as you tap the search box (or there's text in it), the covers go away so you can see
+     * your search results.
      */
-    private fun updateExploreCover(screen: Screen) {
+    private fun updateExploreCover(screen: Screen, now: Long) {
         val field = screen.searchField
-        val coverIt = prefs.hideExplore && screen.searchTabSelected && field != null && !screen.searchActive
+        searchTabSelected = screen.searchTabSelected
+        onSearchPage = screen.searchTabSelected && field != null
+
+        val unlocked = prefs.exploreUnlocked
+        if (wasUnlocked && !unlocked) {
+            prefs.log("Explore locked again")
+            if (onSearchPage && prefs.hideExplore) overlay.show("Explore is hidden again")
+        }
+        wasUnlocked = unlocked
+
+        val coverIt = prefs.hideExplore && !unlocked && onSearchPage && !screen.searchActive
         if (!coverIt || field == null) {
+            // Right after tapping the Search tab the old screen is still being reported for a moment –
+            // keep the instant cover up instead of flashing the grid.
+            if (now < keepCoverUntil && !screen.searchActive && !unlocked) return
             exploreCover.hide()
             return
         }
+        keepCoverUntil = 0L
+
         // If we can't find the bottom bar, stop ~64dp above the bottom so the tabs stay tappable.
-        val fallbackBottom = resources.displayMetrics.heightPixels - (64 * resources.displayMetrics.density).toInt()
+        val metrics = resources.displayMetrics
+        val fallbackBottom = metrics.heightPixels - (64 * metrics.density).toInt()
         val bottom = screen.tabBarTop?.takeIf { it > field.bottom } ?: fallbackBottom
-        exploreCover.show(field.bottom + 1, bottom)
-        if (!exploreCover.isShowing) prefs.log("Hid the Explore grid")
+        val gridArea = Rect(0, field.bottom + 1, metrics.widthPixels, bottom)
+
+        // The ⋯ menu and other buttons to the right of the search box, from below the status bar
+        // down to the bottom of the search box.
+        val cornerArea = Rect(field.right + (2 * metrics.density).toInt(), statusBarHeight(), metrics.widthPixels, field.bottom + 1)
+
+        val wasShowing = exploreCover.isShowing
+        exploreCover.show(gridArea, cornerArea)
+        if (!wasShowing) prefs.log("Hid the Explore grid")
+    }
+
+    /** Tapping the Search tab: cover straight away where the grid was last time, before it draws. */
+    private fun handleClick(event: AccessibilityEvent, now: Long) {
+        if (!prefs.hideExplore || prefs.exploreUnlocked) return
+        val node = event.source ?: return
+        val id = node.viewIdResourceName?.substringAfter(":id/")
+        val label = node.contentDescription?.toString()
+        val isSearchTab = (id != null && Rules.matches(id, Rules.SEARCH_TAB)) ||
+            (label != null && Rules.SEARCH_TAB_LABELS.any { label.equals(it, ignoreCase = true) })
+        if (!isSearchTab) return
+
+        val metrics = resources.displayMetrics
+        val grid = exploreCover.lastGrid ?: run {
+            // First time: a good guess, corrected by the next screen check a moment later.
+            val tabTop = Rect().also { node.getBoundsInScreen(it) }.top.takeIf { it > 0 }
+                ?: (metrics.heightPixels - (64 * metrics.density).toInt())
+            Rect(0, statusBarHeight() + (60 * metrics.density).toInt(), metrics.widthPixels, tabTop)
+        }
+        keepCoverUntil = now + PREEMPT_MS
+        onSearchPage = true
+        exploreCover.show(grid, exploreCover.lastCorner)
+    }
+
+    /** Called by the cover's "Unlock for 5 minutes" button after the 10-second wait. */
+    private fun unlockExplore() {
+        val minutes = ExploreCover.UNLOCK_MINUTES
+        prefs.exploreUnlockedUntil = System.currentTimeMillis() + minutes * 60_000L
+        wasUnlocked = true
+        prefs.log("Unlocked Explore for $minutes minutes")
+        exploreCover.hide()
+        overlay.show("Explore unlocked for $minutes minutes")
+        // Make sure it locks again on time even if nothing else happens on screen.
+        handler.removeCallbacks(relockCheck)
+        handler.postDelayed(relockCheck, minutes * 60_000L + 500L)
+    }
+
+    private fun statusBarHeight(): Int {
+        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else (24 * resources.displayMetrics.density).toInt()
     }
 
     private fun startViewerSession(now: Long, screen: Screen) {
@@ -438,12 +521,15 @@ class ReelGuardService : AccessibilityService() {
         private const val EVENTS_OUTSIDE = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         private const val EVENTS_IN_INSTAGRAM = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
-            AccessibilityEvent.TYPE_VIEW_SCROLLED
+            AccessibilityEvent.TYPE_VIEW_SCROLLED or
+            AccessibilityEvent.TYPE_VIEW_CLICKED
 
         private const val MSG_OFF = "Reels are off"
         private const val MSG_SENT = "That's the one you were sent 👋"
 
         private const val CONTENT_THROTTLE_MS = 300L
+        private const val SEARCH_THROTTLE_MS = 120L
+        private const val PREEMPT_MS = 900L
         private const val LINK_GRACE_MS = 2500L
         private const val SETTLE_MS = 700L
         private const val MIN_BACK_INTERVAL_MS = 700L

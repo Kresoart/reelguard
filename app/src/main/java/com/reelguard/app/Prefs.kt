@@ -21,6 +21,14 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_HIDE_EXPLORE, true)
         set(value) = sp.edit().putBoolean(KEY_HIDE_EXPLORE, value).apply()
 
+    /** Wall-clock time (ms) until which Explore is unlocked; 0 = locked. */
+    var exploreUnlockedUntil: Long
+        get() = sp.getLong(KEY_EXPLORE_UNLOCKED_UNTIL, 0L)
+        set(value) = sp.edit().putLong(KEY_EXPLORE_UNLOCKED_UNTIL, value).apply()
+
+    val exploreUnlocked: Boolean
+        get() = exploreUnlockedUntil > System.currentTimeMillis()
+
     /** All-time scrolls stopped. */
     val blockedCount: Int
         get() = sp.getInt(KEY_BLOCKED, 0)
@@ -92,6 +100,7 @@ class Prefs(context: Context) {
 
         const val KEY_HISTORY = "history"
         const val KEY_HIDE_EXPLORE = "hide_explore"
+        const val KEY_EXPLORE_UNLOCKED_UNTIL = "explore_unlocked_until"
         const val KEY_ENABLED = "enabled"
         const val KEY_BLOCKED = "blocked_count"
         const val KEY_TODAY_BLOCKED = "today_blocked"

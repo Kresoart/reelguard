@@ -89,7 +89,16 @@ class MainActivity : Activity() {
         exploreSwitch.setOnCheckedChangeListener { _, checked ->
             if (prefs.hideExplore != checked) prefs.hideExplore = checked
         }
-        exploreCard.setOnClickListener { if (exploreSwitch.isEnabled) exploreSwitch.toggle() }
+        exploreCard.setOnClickListener {
+            when {
+                // While Explore is unlocked, tapping the card locks it again straight away.
+                prefs.exploreUnlocked -> {
+                    prefs.exploreUnlockedUntil = 0L
+                    Toast.makeText(this, "Explore locked again", Toast.LENGTH_SHORT).show()
+                }
+                exploreSwitch.isEnabled -> exploreSwitch.toggle()
+            }
+        }
 
         findViewById<View>(R.id.resetCounters).setOnClickListener {
             prefs.resetCounters()
@@ -123,8 +132,17 @@ class MainActivity : Activity() {
         }
     }
 
+    // Keeps the "unlocked · N min left" text current while the screen is open.
+    private val ticker = object : Runnable {
+        override fun run() {
+            refresh()
+            exploreCard.postDelayed(this, 15_000L)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        exploreCard.postDelayed(ticker, 15_000L)
         // Coming back from Instagram ends a capture; the last screen you were on is kept.
         if (prefs.captureRequested) prefs.captureRequested = false
         prefs.registerListener(prefListener)
@@ -132,6 +150,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        exploreCard.removeCallbacks(ticker)
         prefs.unregisterListener(prefListener)
         super.onPause()
     }
@@ -162,8 +181,13 @@ class MainActivity : Activity() {
         if (exploreSwitch.isChecked != hideExplore) exploreSwitch.isChecked = hideExplore
         exploreSwitch.isEnabled = blocking
         exploreCard.alpha = if (blocking) 1f else 0.5f
+        val unlockedMs = prefs.exploreUnlockedUntil - System.currentTimeMillis()
         exploreHint.text = when {
             !blocking -> "Paused with Block Reels"
+            hideExplore && unlockedMs > 0 -> {
+                val min = ((unlockedMs + 59_999L) / 60_000L).coerceAtLeast(1)
+                "Unlocked · $min min left · tap to lock"
+            }
             hideExplore -> "Grid hidden · search still works"
             else -> "Off · Explore grid is visible"
         }

@@ -47,6 +47,8 @@ All of Instagram's screen IDs are in `app/src/main/java/com/reelguard/app/Rules.
 | Scrolling comments under an allowed reel | Fine |
 | Search page open, search box empty | Explore grid covered (search box and tabs still work) |
 | Typing in the search box / search results | Visible as normal |
+| ⋯ menu to the right of the search box | Covered |
+| "Unlock for 5 minutes" on the cover | 10-second wait, then Explore is visible for 5 minutes and locks again by itself |
 | Back didn't leave Reels after 3 tries | Stops trying, tells you to use Fix detection |
 
 ReelGuard knows you came "from another app" because Android tells it which app is in front.
