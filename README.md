@@ -5,6 +5,7 @@ Blocks Instagram Reels scrolling on Android, but still lets you watch a reel som
 - Open the **Reels tab** (or tap a reel in the feed/explore) → ReelGuard presses Back: *"Reels are off"*.
 - Open a reel from a **DM** (or a reel link from WhatsApp etc.) → it plays normally.
 - **Swipe** to the next reel → ReelGuard presses Back: *"That's the one you were sent"*.
+- **Search page** → the Explore grid is covered; you can still search for people (own switch: *Hide Explore*).
 
 It only reads Instagram's screen, does a quick check a few times a second while Instagram is open, and otherwise only notices which app is open. No internet permission, no account, nothing leaves the phone.
 
@@ -44,6 +45,8 @@ All of Instagram's screen IDs are in `app/src/main/java/com/reelguard/app/Rules.
 | Reel link opened from another app (WhatsApp, Messages…) | Allowed (one reel) |
 | Swipe in an allowed reel moves to a different item | Back + "That's the one you were sent" |
 | Scrolling comments under an allowed reel | Fine |
+| Search page open, search box empty | Explore grid covered (search box and tabs still work) |
+| Typing in the search box / search results | Visible as normal |
 | Back didn't leave Reels after 3 tries | Stops trying, tells you to use Fix detection |
 
 ReelGuard knows you came "from another app" because Android tells it which app is in front.
@@ -56,6 +59,7 @@ app/src/main/java/com/reelguard/app/
   ReelGuardService.kt   the blocker (accessibility service)
   Rules.kt              Instagram view IDs – the only file you should need to edit
   Overlay.kt            the little message pill
+  ExploreCover.kt       the black panel over the Explore grid
   MainActivity.kt       settings screen
   Prefs.kt              on/off + counters
 app/src/main/res/xml/reel_guard_service.xml   which app & events Android sends (Instagram only)

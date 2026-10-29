@@ -135,6 +135,49 @@
                 android:track="@drawable/switch_track" />
         </LinearLayout>
 
+        <!-- Second switch: cover the Explore grid on the Search page -->
+        <LinearLayout
+            android:id="@+id/exploreCard"
+            style="@style/RG.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/RG.Text.Title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Hide Explore" />
+
+                <TextView
+                    android:id="@+id/exploreHint"
+                    style="@style/RG.Text.Body"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Search still works"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <Switch
+                android:id="@+id/exploreSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Hide Explore"
+                android:minHeight="48dp"
+                android:showText="false"
+                android:thumb="@drawable/switch_thumb"
+                android:track="@drawable/switch_track" />
+        </LinearLayout>
+
         <!-- ───────── Stats ───────── -->
         <LinearLayout
             android:layout_width="match_parent"

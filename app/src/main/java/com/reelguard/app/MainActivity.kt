@@ -30,6 +30,9 @@ class MainActivity : Activity() {
     private lateinit var toggleCard: View
     private lateinit var toggleHint: TextView
     private lateinit var enabledSwitch: Switch
+    private lateinit var exploreCard: View
+    private lateinit var exploreHint: TextView
+    private lateinit var exploreSwitch: Switch
     private lateinit var statToday: TextView
     private lateinit var statTotal: TextView
     private lateinit var lastDot: View
@@ -58,6 +61,9 @@ class MainActivity : Activity() {
         toggleCard = findViewById(R.id.toggleCard)
         toggleHint = findViewById(R.id.toggleHint)
         enabledSwitch = findViewById(R.id.enabledSwitch)
+        exploreCard = findViewById(R.id.exploreCard)
+        exploreHint = findViewById(R.id.exploreHint)
+        exploreSwitch = findViewById(R.id.exploreSwitch)
         statToday = findViewById(R.id.statToday)
         statTotal = findViewById(R.id.statTotal)
         lastDot = findViewById(R.id.lastDot)
@@ -79,6 +85,11 @@ class MainActivity : Activity() {
         }
         // Tapping anywhere on the card flips the switch too.
         toggleCard.setOnClickListener { enabledSwitch.toggle() }
+
+        exploreSwitch.setOnCheckedChangeListener { _, checked ->
+            if (prefs.hideExplore != checked) prefs.hideExplore = checked
+        }
+        exploreCard.setOnClickListener { if (exploreSwitch.isEnabled) exploreSwitch.toggle() }
 
         findViewById<View>(R.id.resetCounters).setOnClickListener {
             prefs.resetCounters()
@@ -147,6 +158,16 @@ class MainActivity : Activity() {
         if (enabledSwitch.isChecked != blocking) enabledSwitch.isChecked = blocking
         toggleHint.text = if (blocking) "On" else "Paused · Reels work normally"
 
+        val hideExplore = prefs.hideExplore
+        if (exploreSwitch.isChecked != hideExplore) exploreSwitch.isChecked = hideExplore
+        exploreSwitch.isEnabled = blocking
+        exploreCard.alpha = if (blocking) 1f else 0.5f
+        exploreHint.text = when {
+            !blocking -> "Paused with Block Reels"
+            hideExplore -> "Grid hidden · search still works"
+            else -> "Off · Explore grid is visible"
+        }
+
         statToday.text = prefs.todayBlocked.toString()
         statTotal.text = prefs.blockedCount.toString()
         val allowed = prefs.allowedCount
@@ -180,6 +201,7 @@ class MainActivity : Activity() {
         }
         openAccessibility.visibility = if (state == State.NOT_ACTIVE) View.VISIBLE else View.GONE
         toggleCard.visibility = if (state == State.NOT_ACTIVE) View.GONE else View.VISIBLE
+        exploreCard.visibility = toggleCard.visibility
 
         val on = state == State.ON
         heroShield.imageTintList = ColorStateList.valueOf(if (on) accent else muted)

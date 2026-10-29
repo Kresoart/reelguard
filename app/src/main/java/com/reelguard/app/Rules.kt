@@ -55,6 +55,24 @@ object Rules {
         "profile_tab",
     )
 
+    /** The Search button in the bottom bar. If it is selected, you are on the Search/Explore page. */
+    val SEARCH_TAB = listOf(
+        "search_tab",
+    )
+
+    /** Fallback: a selected bottom-bar button whose label is one of these. */
+    val SEARCH_TAB_LABELS = listOf(
+        "Search and explore",
+        "Search",
+    )
+
+    /** The search box at the top of the Search page. The grid below it gets covered. */
+    val SEARCH_FIELD = listOf(
+        "action_bar_search_edit_text",
+        "search_edit_text",
+        "search_bar",
+    )
+
     fun matches(id: String, patterns: List<String>): Boolean =
         patterns.any { id.contains(it, ignoreCase = true) }
 }

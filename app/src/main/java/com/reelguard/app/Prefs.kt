@@ -16,6 +16,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_ENABLED, true)
         set(value) = sp.edit().putBoolean(KEY_ENABLED, value).apply()
 
+    /** Cover the Explore grid on Instagram's Search page (search box still works). */
+    var hideExplore: Boolean
+        get() = sp.getBoolean(KEY_HIDE_EXPLORE, true)
+        set(value) = sp.edit().putBoolean(KEY_HIDE_EXPLORE, value).apply()
+
     /** All-time scrolls stopped. */
     val blockedCount: Int
         get() = sp.getInt(KEY_BLOCKED, 0)
@@ -86,6 +91,7 @@ class Prefs(context: Context) {
         fun timeNow(): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
 
         const val KEY_HISTORY = "history"
+        const val KEY_HIDE_EXPLORE = "hide_explore"
         const val KEY_ENABLED = "enabled"
         const val KEY_BLOCKED = "blocked_count"
         const val KEY_TODAY_BLOCKED = "today_blocked"

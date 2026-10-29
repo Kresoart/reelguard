@@ -3,6 +3,7 @@ package com.reelguard.app
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
@@ -25,6 +26,7 @@ class ReelGuardService : AccessibilityService() {
 
     private lateinit var prefs: Prefs
     private lateinit var overlay: Overlay
+    private lateinit var exploreCover: ExploreCover
 
     // ---- which app is in front ----
     private var instagramInFront = false
@@ -56,6 +58,7 @@ class ReelGuardService : AccessibilityService() {
         super.onServiceConnected()
         prefs = Prefs(this)
         overlay = Overlay(this)
+        exploreCover = ExploreCover(this)
         launcherPackages = findLaunchers()
         keyboardPackages = findKeyboards()
 
@@ -86,6 +89,7 @@ class ReelGuardService : AccessibilityService() {
 
         if (!prefs.enabled) {
             if (inViewer) endViewerSession()
+            exploreCover.hide()
             return
         }
 
@@ -103,6 +107,7 @@ class ReelGuardService : AccessibilityService() {
 
     override fun onDestroy() {
         if (::overlay.isInitialized) overlay.destroy()
+        if (::exploreCover.isInitialized) exploreCover.destroy()
         super.onDestroy()
     }
 
@@ -120,6 +125,7 @@ class ReelGuardService : AccessibilityService() {
 
     private fun leaveInstagram() {
         instagramInFront = false
+        exploreCover.hide()
         freshFromOutside = false
         cameFromDm = false
         endViewerSession()
@@ -178,10 +184,12 @@ class ReelGuardService : AccessibilityService() {
                 }
             }
             endViewerSession()
+            exploreCover.hide()
             return
         }
 
         if (screen.inViewer) {
+            exploreCover.hide()
             if (!inViewer) {
                 startViewerSession(now, screen)
             } else if (allowedSession && screen.reelsTabSelected) {
@@ -209,7 +217,28 @@ class ReelGuardService : AccessibilityService() {
             // you open next is not "from another app". (Grace period for cold starts, where Instagram
             // flashes its home screen before jumping to the linked reel.)
             if (screen.tabBarVisible && now - instagramEnteredAt > LINK_GRACE_MS) freshFromOutside = false
+
+            updateExploreCover(screen)
         }
+    }
+
+    /**
+     * On the Search page, while the search box is idle, cover the Explore grid between the search
+     * box and the bottom bar. As soon as you tap the search box (or there's text in it), the cover
+     * goes away so you can see your search results.
+     */
+    private fun updateExploreCover(screen: Screen) {
+        val field = screen.searchField
+        val coverIt = prefs.hideExplore && screen.searchTabSelected && field != null && !screen.searchActive
+        if (!coverIt || field == null) {
+            exploreCover.hide()
+            return
+        }
+        // If we can't find the bottom bar, stop ~64dp above the bottom so the tabs stay tappable.
+        val fallbackBottom = resources.displayMetrics.heightPixels - (64 * resources.displayMetrics.density).toInt()
+        val bottom = screen.tabBarTop?.takeIf { it > field.bottom } ?: fallbackBottom
+        exploreCover.show(field.bottom + 1, bottom)
+        if (!exploreCover.isShowing) prefs.log("Hid the Explore grid")
     }
 
     private fun startViewerSession(now: Long, screen: Screen) {
@@ -306,12 +335,17 @@ class ReelGuardService : AccessibilityService() {
         val inDm: Boolean,
         val tabBarVisible: Boolean,
         val ids: Set<String>?,
+        val searchTabSelected: Boolean = false,
+        val searchField: Rect? = null,      // where the search box is on screen
+        val searchActive: Boolean = false,  // search box focused or has text → showing results
+        val tabBarTop: Int? = null,         // top edge of the bottom bar
     ) {
         fun describe(): String = buildList {
             if (inViewer) add("Reels player")
             if (reelsTabSelected) add("Reels tab selected")
             if (inDm) add("DM chat")
             if (tabBarVisible) add("bottom bar")
+            if (searchTabSelected) add(if (searchActive) "Search (typing)" else "Search page")
         }.ifEmpty { listOf("nothing recognised") }.joinToString(", ")
     }
 
@@ -322,6 +356,11 @@ class ReelGuardService : AccessibilityService() {
         var tabSelected = false
         var inDm = false
         var tabBar = false
+        var searchTab = false
+        var searchField: Rect? = null
+        var searchActive = false
+        var tabBarTop: Int? = null
+        var anyTabTop: Int? = null
         val ids: MutableSet<String>? = if (collectIds) sortedSetOf() else null
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
@@ -341,12 +380,30 @@ class ReelGuardService : AccessibilityService() {
                     if (Rules.matches(id, Rules.DM_THREAD)) inDm = true
                     if (Rules.matches(id, Rules.TAB_BAR)) tabBar = true
                     if (node.isSelected && Rules.matches(id, Rules.REELS_TAB)) tabSelected = true
+                    if (node.isSelected && Rules.matches(id, Rules.SEARCH_TAB)) searchTab = true
+                    if (id == "tab_bar") {
+                        tabBarTop = Rect().also { node.getBoundsInScreen(it) }.top
+                    } else if (Rules.matches(id, Rules.TAB_BAR) || Rules.matches(id, Rules.REELS_TAB)) {
+                        // One of the bottom-bar buttons (in case the bar itself has a different ID).
+                        val top = Rect().also { node.getBoundsInScreen(it) }.top
+                        anyTabTop = minOf(anyTabTop ?: top, top)
+                    }
+                    if (searchField == null && Rules.matches(id, Rules.SEARCH_FIELD)) {
+                        searchField = Rect().also { node.getBoundsInScreen(it) }
+                        searchActive = isSearchActive(node)
+                    }
                 }
             }
-            if (visible && node.isSelected && !tabSelected) {
+            if (visible && searchField == null && node.className?.toString()?.endsWith("EditText") == true) {
+                // Fallback if the search box ID changed: the first text box on screen.
+                searchField = Rect().also { node.getBoundsInScreen(it) }
+                searchActive = isSearchActive(node)
+            }
+            if (visible && node.isSelected) {
                 val label = node.contentDescription?.toString()
-                if (label != null && Rules.REELS_TAB_LABELS.any { label.equals(it, ignoreCase = true) }) {
-                    tabSelected = true
+                if (label != null) {
+                    if (Rules.REELS_TAB_LABELS.any { label.equals(it, ignoreCase = true) }) tabSelected = true
+                    if (Rules.SEARCH_TAB_LABELS.any { label.equals(it, ignoreCase = true) }) searchTab = true
                 }
             }
 
@@ -356,7 +413,25 @@ class ReelGuardService : AccessibilityService() {
         }
         // The Reels tab counts as the Reels player even if the player IDs changed.
         // A DM chat never has the bottom bar, so if both match, trust the bar.
-        return Screen(inViewer || tabSelected, tabSelected, inDm && !tabBar, tabBar, ids)
+        return Screen(
+            inViewer = inViewer || tabSelected,
+            reelsTabSelected = tabSelected,
+            inDm = inDm && !tabBar,
+            tabBarVisible = tabBar,
+            ids = ids,
+            searchTabSelected = searchTab,
+            searchField = searchField,
+            searchActive = searchActive,
+            tabBarTop = tabBarTop ?: anyTabTop,
+        )
+    }
+
+    /** The search box is "in use" when it has focus or contains typed text (not just the hint). */
+    private fun isSearchActive(node: AccessibilityNodeInfo): Boolean {
+        if (node.isFocused) return true
+        if (node.className?.toString()?.endsWith("EditText") != true) return false
+        val text = node.text
+        return !text.isNullOrBlank() && !node.isShowingHintText
     }
 
     companion object {
